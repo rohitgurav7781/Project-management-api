@@ -1,0 +1,1 @@
+import{j as t}from"./index-C1Uhw5bp.js";import{U as i}from"./index-D2BZmd0c.js";const l=({value:n,disabled:e,setData:r,className:o})=>{console.log(typeof n,"value");const s=n?String(n):"";return t.jsx(t.Fragment,{children:t.jsx(i,{defaultCountry:"in",className:o||"phone-input-container",disabled:e,value:s,onChange:r})})};export{l as I};

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=0.8" />
+    <style>
+      body,
+      h1,
+      h2,
+      h3,
+      h4,
+      p,
+      ul,
+      ol,
+      li {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        line-height: 1.6;
+        background-color: #f9f9f9;
+      }
+
+      h1 {
+        font-size: 16px;
+        font-weight: bold;
+        margin-bottom: 7px;
+      }
+
+      h2 {
+        font-size: 12px;
+        /* font-weight: bold; */
+        margin-bottom: 7px;
+      }
+
+      h3 {
+        /* font-size: 14px; */
+        margin-bottom: 5px;
+      }
+
+      h4 {
+        font-size: 9px;
+        color: grey;
+        margin-bottom: 5px;
+      }
+
+      p {
+        font-size: 8px;
+        margin-bottom: 5px;
+      }
+
+      .container {
+        width: 90%;
+        margin: 0 auto;
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background-color: #fff;
+        page-break-inside: avoid;
+      }
+
+      .header {
+        text-align: left;
+      }
+
+      .address-section {
+        display: flex;
+        justify-content: space-between;
+        position: relative;
+      }
+
+      .address {
+        width: 48%;
+      }
+
+      .table-section {
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+      }
+
+      th,
+      td {
+        padding: 5px;
+        text-align: center;
+      }
+
+      th {
+        background-color: #6f42e5;
+        color: black;
+        border: 1px solid #ddd;
+      }
+      th,
+      /* td {
+        border: 1px solid black;
+        padding: 8px;
+        text-align: left;
+      } */
+
+      .footer {
+        text-align: center;
+        margin-top: 3rem;
+      }
+
+      .footer p {
+        background-color: #6f42e5;
+        color: white;
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 10px;
+      }
+
+      .image {
+        height: 25px;
+        margin-bottom: 1rem;
+      }
+
+      img {
+        width: 100%;
+        height: auto;
+        object-fit: contain;
+      }
+
+      .declaration {
+        font-weight: 500;
+      }
+
+      .note {
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .subheading {
+        color: #6f42e5;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="image">
+        <img
+          src="https://clippetuploads.s3.ap-south-1.amazonaws.com/clippetHeader.jpg"
+          alt="Clippet"
+        />
+      </div>
+      <div>
+        <div class="header">
+          <h1 class="subheading">Invoice</h1>
+          <h4>Invoice No.: <%= orderObj?.orderId %></h4>
+          <h4>Date: <%= orderObj?.formattedDate %></h4>
+        </div>
+
+        <div class="address-section">
+          <div class="address">
+            <h2 class="subheading">Bill To</h2>
+            <h3><%= orderObj?.billingDetails?.name %></h3>
+            <p><%= orderObj?.billingDetails?.address %></p>
+            <p>Mobile No: <%= orderObj?.billingDetails?.phone %></p>
+            <p>Email ID: <%= orderObj?.billingDetails?.email %></p>
+            <p>Place of supply/state: <%= orderObj?.billingDetails?.state %></p>
+            <% if (orderObj?.billingDetails?.hasOrganization) { %>
+            <p>
+              Organization Name: <%= orderObj?.billingDetails?.organizationName
+              %>
+            </p>
+            <p>GST No: <%= orderObj?.billingDetails?.gstNo %></p>
+            <% } %>
+          </div>
+
+          <div
+            class="address"
+            style="
+              float: right;
+              position: absolute;
+              left: 18.2rem;
+              bottom: 0.27rem;
+            "
+          >
+            <h2 class="subheading">From</h2>
+            <h3 style="font-weight: bold">Clippet Technologies</h3>
+            <p>+91-7624934555</p>
+            <p>
+              #665, 3rd Main, 11th Cross, Hemavathi Nagar Hassan Karnataka
+              573201
+            </p>
+            <p>GST No. 29AALCC9950B1ZE</p>
+            <p>Pan No. AALCC9950B</p>
+          </div>
+        </div>
+
+        <div class="table-section">
+          <table cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr>
+                <th style="border: 1px solid black;color: #fff;">Description</th>
+                <th style="border: 1px solid black;color: #fff;">HSN/SAC</th>
+                <th style="border: 1px solid black;color: #fff;">Amount</th>
+                <th style="border: 1px solid black;color: #fff;">Discount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="border: 1px solid black;">
+                  <%= orderObj?.inventoryId?.name %><br />
+                  <span><%= orderObj?.formattedDate %></span>
+                </td>
+                <td style="border: 1px solid black;">998413</td>
+                <td style="border: 1px solid black;">&#8377;<%= orderObj?.baseAmount %></td>
+                <td style="border: 1px solid black;">&#8377;<%= orderObj?.discountAmount %></td>
+              </tr>
+        
+              <!-- Subtotal Row (No Border) -->
+              <tr>
+                <td colspan="3" style="text-align: right; border: none;">Subtotal:</td>
+                <td style="border: none;">&#8377;<%= orderObj?.baseAmount - orderObj?.discountAmount %></td>
+              </tr>
+        
+              <% if (orderObj?.state?.toLowerCase() === "karnataka") { %>
+                <!-- SGST Row (No Border) -->
+                <tr>
+                  <td colspan="3" style="text-align: right; border: none;">SGST (<%= orderObj?.sgstValue %>):</td>
+                  <td style="border: none;">&#8377;<%= orderObj?.sgst %></td>
+                </tr>
+                
+                <!-- CGST Row (No Border) -->
+                <tr>
+                  <td colspan="3" style="text-align: right; border: none;">CGST (<%= orderObj?.cgstValue %>):</td>
+                  <td style="border: none;">&#8377;<%= orderObj?.cgst %></td>
+                </tr>
+        
+                <!-- Grand Total Row (No Border) -->
+                <tr>
+                  <td colspan="3" style="text-align: right; font-weight: bold; border: none;">Grand Total:</td>
+                  <td style="font-weight: bold; border: none;">&#8377;<%= orderObj?.finalAmount %></td>
+                </tr>
+              <% } else { %>
+                <!-- IGST Row (No Border) -->
+                <tr>
+                  <td colspan="3" style="text-align: right; border: none;">IGST (<%= orderObj?.igstValue %>):</td>
+                  <td style="border: none;">&#8377;<%= orderObj?.igst %></td>
+                </tr>
+        
+                <!-- Grand Total Row (No Border) -->
+                <tr>
+                  <td colspan="3" style="text-align: right; font-weight: bold; border: none;">Grand Total:</td>
+                  <td style="font-weight: bold; border: none;">&#8377;<%= orderObj?.finalAmount %></td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+        
+
+        <div class="declaration">
+          <h2 style="font-weight: bold; margin-top: 0.3rem">
+            Terms & Conditions
+          </h2>
+          <div>
+            - Tax may be deducted at source (TDS) @ 10% under section 194J of
+            the Income Tax Act.
+          </div>
+          <div>
+            - The threshold for deducting TDS under Section 194J is Rs. 30,000
+            per financial year for each type of payment.
+          </div>
+        </div>
+
+        <div class="declaration">
+          <h2 style="font-weight: bold">Declaration</h2>
+          <div>
+            We declare that this invoice shows the actual price of the Services
+            described and that all particulars are true and correct.
+          </div>
+        </div>
+
+        <div class="footer">
+          <p>clippet.ai | support@clippet.ai | +91-7624934555</p>
+        </div>
+
+        <div class="note">
+          This is an automatically generated Invoice, no signature is required.
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
