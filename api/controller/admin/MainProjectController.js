@@ -1,73 +1,51 @@
-const mongoose = require("mongoose");
 const MainProject = require("../../models/MainProject");
+const SpaceIssue = require("../../models/SpaceIssue");
+const { getSpaceTemplateConfig } = require("../../../config/spaceTemplateDefaults");
 const UtilController = require("../services/UtilController");
-const returnCode = require("../../../config/responseCode").returnCode;
+const {
+  nowTs,
+  toObjectId,
+  recordIdFrom,
+  listMatch,
+  projectMatchById,
+  activeProjectMatch,
+  leadLookupStages,
+  parsePagination,
+  parseSort,
+  normalizeProjectKey,
+  sendValidationError,
+  sendNotFound,
+  requireOrganization,
+  touchMeta,
+  returnCode,
+} = require("./mainProjectHelpers");
+
+const handleDuplicateKey = (req, res, next, err) => {
+  if (err?.code === 11000) {
+    return UtilController.sendError(req, res, next, {
+      message: "Duplicate project key for this organization",
+      responseCode: returnCode.duplicate,
+    });
+  }
+  return UtilController.sendError(req, res, next, err);
+};
+
+const normalizeStatusKey = (value) =>
+  String(value || "TODO")
+    .trim()
+    .replace(/\s+/g, "_")
+    .toUpperCase();
 
 module.exports = {
   listMainProjects: async (req, res, next) => {
     try {
-      const match = { active: true };
-      if (!UtilController.isEmpty(req.session.organizationId)) {
-        match.organizationId = mongoose.Types.ObjectId(req.session.organizationId);
-      } else if (!UtilController.isEmpty(req.body.organizationId)) {
-        match.organizationId = mongoose.Types.ObjectId(req.body.organizationId);
-      }
-      const keyword = (req.body.keyword || "").trim();
-      const typeFilter = (req.body.spaceType || "").trim();
+      const { page, pageSize } = parsePagination(req.body);
+      const match = listMatch(req, req.body);
+      const sort = parseSort(req.body);
 
-      if (keyword) {
-        match.$or = [
-          { name: { $regex: keyword, $options: "i" } },
-          { projectKey: { $regex: keyword, $options: "i" } },
-        ];
-      }
-      if (typeFilter && typeFilter !== "all") {
-        match.spaceType = typeFilter;
-      }
-
-      let sort = { updatedAt: -1 };
-      if (!UtilController.isEmpty(req.body.sortField) && !UtilController.isEmpty(req.body.sortOrder)) {
-        sort = {
-          [req.body.sortField]: req.body.sortOrder === "false" || req.body.sortOrder === false ? -1 : 1,
-        };
-      }
-
-      let pageSize = 10;
-      let page = 0;
-      if (!UtilController.isEmpty(req.body.pageSize)) pageSize = Number(req.body.pageSize);
-      if (!UtilController.isEmpty(req.body.page)) page = Number(req.body.page);
-
-      const rows = await MainProject.aggregate([
+      const [result] = await MainProject.aggregate([
         { $match: match },
-        {
-          $lookup: {
-            from: "users",
-            localField: "lead",
-            foreignField: "_id",
-            as: "leadUser",
-          },
-        },
-        { $unwind: { path: "$leadUser", preserveNullAndEmptyArrays: true } },
-        {
-          $addFields: {
-            leadName: {
-              $trim: {
-                input: {
-                  $concat: [
-                    { $ifNull: ["$leadUser.fname", ""] },
-                    " ",
-                    { $ifNull: ["$leadUser.lname", ""] },
-                  ],
-                },
-              },
-            },
-          },
-        },
-        {
-          $project: {
-            leadUser: 0,
-          },
-        },
+        ...leadLookupStages,
         { $sort: sort },
         {
           $facet: {
@@ -77,14 +55,12 @@ module.exports = {
         },
       ]);
 
-      const totalCount = rows?.[0]?.totalCount?.[0]?.count || 0;
-      const data = rows?.[0]?.data || [];
-      const pages = Math.ceil(totalCount / pageSize) || 1;
+      const totalCount = result?.totalCount?.[0]?.count || 0;
 
       UtilController.sendSuccess(req, res, next, {
-        rows: data,
+        rows: result?.data || [],
         filterRecords: totalCount,
-        pages,
+        pages: Math.ceil(totalCount / pageSize) || 1,
         responseCode: returnCode.validSession,
       });
     } catch (err) {
@@ -94,37 +70,28 @@ module.exports = {
 
   createMainProject: async (req, res, next) => {
     try {
-      if (UtilController.isEmpty(req.session.organizationId)) {
-        return UtilController.sendError(req, res, next, {
-          message: "Organization Id is required",
-          responseCode: returnCode.incompleteBody,
-        });
-      }
+      if (!requireOrganization(req, res, next)) return;
 
       const name = (req.body.name || "").trim();
-      const projectKey = (req.body.projectKey || req.body.key || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-      const spaceType = (req.body.spaceType || "Team-managed software").trim();
-      const lead = req.body.leadId || req.body.lead;
+      const projectKey = normalizeProjectKey(req.body.projectKey || req.body.key);
+      const templateId = (req.body.templateId || "kanban").trim();
+      const templateConfig = getSpaceTemplateConfig(templateId);
+      const spaceType = (req.body.spaceType || templateConfig.spaceType || "Team-managed software").trim();
+      const managerId = req.body.managerId || req.body.leadId || req.body.teamLeadId;
+      const accessScope = String(req.body.accessScope || "team").toLowerCase() === "company" ? "company" : "team";
+      const orgId = toObjectId(req.session.organizationId);
 
-      if (!name) {
-        return UtilController.sendError(req, res, next, {
-          message: "Name is required",
-          responseCode: returnCode.incompleteBody,
-        });
+      if (!name) return sendValidationError(req, res, next, "Name is required");
+      if (projectKey.length < 2) {
+        return sendValidationError(
+          req,
+          res,
+          next,
+          "Project key must be at least 2 characters (letters and numbers only)",
+        );
       }
-      if (!projectKey || projectKey.length < 2) {
-        return UtilController.sendError(req, res, next, {
-          message: "Project key must be at least 2 characters (letters and numbers only)",
-          responseCode: returnCode.incompleteBody,
-        });
-      }
 
-      const exists = await MainProject.findOne({
-        organizationId: mongoose.Types.ObjectId(req.session.organizationId),
-        projectKey,
-        active: true,
-      }).lean();
-
+      const exists = await MainProject.findOne({ organizationId: orgId, projectKey, active: true }).lean();
       if (exists) {
         return UtilController.sendError(req, res, next, {
           message: "A space with this key already exists in your organization",
@@ -132,69 +99,76 @@ module.exports = {
         });
       }
 
-      const doc = new MainProject({
+      const saved = await new MainProject({
         organizationId: req.session.organizationId,
         name,
         projectKey,
         spaceType,
-        lead: lead ? mongoose.Types.ObjectId(lead) : undefined,
+        templateId: templateConfig.templateId,
+        boardType: templateConfig.boardType,
+        boardColumns: templateConfig.boardColumns,
+        workTypes: templateConfig.workTypes,
+        workflowStatuses: templateConfig.workflowStatuses,
+        lead: managerId ? toObjectId(managerId) : undefined,
+        accessScope,
         isStarred: !!req.body.isStarred,
         createdBy: req.session.userId,
         operatedBy: req.session.userId,
-        updatedAt: Math.floor(Date.now() / 1000),
-      });
+        updatedAt: nowTs(),
+      }).save();
 
-      const saved = await doc.save();
+      const welcomeIssue = await new SpaceIssue({
+        organizationId: req.session.organizationId,
+        mainProjectId: saved._id,
+        issueKey: `${projectKey}-1`,
+        title: `Welcome to ${name}`,
+        issueType: templateConfig.boardType === "scrum" ? "story" : "task",
+        statusKey: templateConfig.boardColumns[0]?.statusKey || "TODO",
+        sortOrder: 0,
+        createdBy: req.session.userId,
+      }).save();
+
       UtilController.sendSuccess(req, res, next, {
         mainProject: saved,
-        message: "Main project created successfully",
+        welcomeIssue,
+        message: "Space created successfully",
         responseCode: returnCode.validSession,
       });
     } catch (err) {
-      if (err && err.code === 11000) {
-        return UtilController.sendError(req, res, next, {
-          message: "Duplicate project key for this organization",
-          responseCode: returnCode.duplicate,
-        });
-      }
-      UtilController.sendError(req, res, next, err);
+      handleDuplicateKey(req, res, next, err);
     }
   },
 
   updateMainProject: async (req, res, next) => {
     try {
-      const recordId = req.body.recordId || req.body.mainProjectId;
-      if (UtilController.isEmpty(recordId)) {
-        return UtilController.sendError(req, res, next, {
-          message: "recordId is required",
-          responseCode: returnCode.incompleteBody,
-        });
-      }
+      const recordId = recordIdFrom(req.body, "recordId", "mainProjectId");
+      if (!recordId) return sendValidationError(req, res, next, "recordId is required");
 
-      const match = {
-        _id: mongoose.Types.ObjectId(recordId),
-        active: true,
-      };
-      if (!UtilController.isEmpty(req.session.organizationId)) {
-        match.organizationId = mongoose.Types.ObjectId(req.session.organizationId);
-      }
-
-      const update = { updatedAt: Math.floor(Date.now() / 1000), operatedBy: req.session.userId };
+      const update = { ...touchMeta(req) };
       if (typeof req.body.isStarred === "boolean") update.isStarred = req.body.isStarred;
+      if (typeof req.body.isArchived === "boolean") update.isArchived = req.body.isArchived;
       if (req.body.name !== undefined) update.name = String(req.body.name).trim();
       if (req.body.spaceType !== undefined) update.spaceType = String(req.body.spaceType).trim();
-      if (req.body.leadId !== undefined || req.body.lead !== undefined) {
-        const lead = req.body.leadId || req.body.lead;
-        update.lead = lead ? mongoose.Types.ObjectId(lead) : null;
+
+      if (req.body.managerId !== undefined || req.body.leadId !== undefined) {
+        const id = req.body.managerId ?? req.body.leadId;
+        update.lead = id ? toObjectId(id) : null;
+      }
+      if (req.body.teamLeadId !== undefined) {
+        update.teamLead = req.body.teamLeadId ? toObjectId(req.body.teamLeadId) : null;
+      }
+      if (req.body.accessScope !== undefined) {
+        const s = String(req.body.accessScope).toLowerCase();
+        update.accessScope = s === "company" ? "company" : "team";
       }
 
-      const updated = await MainProject.findOneAndUpdate(match, { $set: update }, { new: true });
-      if (!updated) {
-        return UtilController.sendError(req, res, next, {
-          message: "Record not found",
-          responseCode: returnCode.recordNotFound,
-        });
-      }
+      const updated = await MainProject.findOneAndUpdate(
+        activeProjectMatch(req, recordId),
+        { $set: update },
+        { new: true },
+      );
+
+      if (!updated) return sendNotFound(req, res, next);
 
       UtilController.sendSuccess(req, res, next, {
         mainProject: updated,
@@ -206,42 +180,127 @@ module.exports = {
     }
   },
 
-  deleteMainProject: async (req, res, next) => {
+  getMainProjectDetails: async (req, res, next) => {
     try {
-      const recordId = req.body.recordId || req.body.mainProjectId;
-      if (UtilController.isEmpty(recordId)) {
-        return UtilController.sendError(req, res, next, {
-          message: "recordId is required",
-          responseCode: returnCode.incompleteBody,
-        });
-      }
+      const recordId = recordIdFrom(req.body, "recordId", "mainProjectId");
+      if (!recordId) return sendValidationError(req, res, next, "recordId is required");
 
-      const match = {
-        _id: mongoose.Types.ObjectId(recordId),
+      const project = await MainProject.findOne(projectMatchById(req, recordId)).lean();
+      if (!project) return sendNotFound(req, res, next);
+
+      const issues = await SpaceIssue.find({
+        mainProjectId: project._id,
         active: true,
-      };
-      if (!UtilController.isEmpty(req.session.organizationId)) {
-        match.organizationId = mongoose.Types.ObjectId(req.session.organizationId);
+        isArchived: { $ne: true },
+      })
+        .sort({ statusKey: 1, sortOrder: 1, createdAt: 1 })
+        .lean();
+
+      UtilController.sendSuccess(req, res, next, {
+        mainProject: project,
+        issues,
+        responseCode: returnCode.validSession,
+      });
+    } catch (err) {
+      UtilController.sendError(req, res, next, err);
+    }
+  },
+
+  createSpaceIssue: async (req, res, next) => {
+    try {
+      if (!requireOrganization(req, res, next)) return;
+
+      const mainProjectId = recordIdFrom(req.body, "mainProjectId", "recordId");
+      const title = (req.body.title || "").trim();
+      const issueType = (req.body.issueType || "task").trim();
+      const statusKey = normalizeStatusKey(req.body.statusKey);
+      const assigneeId = req.body.assigneeId || req.body.assignee;
+
+      if (!mainProjectId || !title) {
+        return sendValidationError(req, res, next, "mainProjectId and title are required");
       }
 
-      const updated = await MainProject.findOneAndUpdate(
-        match,
+      const project = await MainProject.findOne(projectMatchById(req, mainProjectId)).lean();
+      if (!project) return sendNotFound(req, res, next, "Space not found");
+
+      const count = await SpaceIssue.countDocuments({ mainProjectId: project._id, active: true });
+      const issue = await new SpaceIssue({
+        organizationId: req.session.organizationId,
+        mainProjectId: project._id,
+        issueKey: `${project.projectKey}-${count + 1}`,
+        title,
+        issueType,
+        statusKey,
+        assignee: assigneeId ? toObjectId(assigneeId) : undefined,
+        sortOrder: count,
+        createdBy: req.session.userId,
+      }).save();
+
+      UtilController.sendSuccess(req, res, next, {
+        issue,
+        responseCode: returnCode.validSession,
+      });
+    } catch (err) {
+      UtilController.sendError(req, res, next, err);
+    }
+  },
+
+  updateSpaceIssue: async (req, res, next) => {
+    try {
+      const issueId = recordIdFrom(req.body, "issueId", "recordId");
+      if (!issueId) return sendValidationError(req, res, next, "issueId is required");
+
+      const update = { updatedAt: nowTs() };
+      if (req.body.title !== undefined) update.title = String(req.body.title).trim();
+      if (req.body.statusKey !== undefined) update.statusKey = normalizeStatusKey(req.body.statusKey);
+      if (req.body.issueType !== undefined) update.issueType = String(req.body.issueType).trim();
+      if (req.body.sortOrder !== undefined) update.sortOrder = Number(req.body.sortOrder);
+      if (req.body.assigneeId !== undefined || req.body.assignee !== undefined) {
+        const assigneeId = req.body.assigneeId ?? req.body.assignee;
+        update.assignee = assigneeId ? toObjectId(assigneeId) : null;
+      }
+      if (req.body.isArchived !== undefined) update.isArchived = !!req.body.isArchived;
+      if (req.body.active !== undefined) update.active = !!req.body.active;
+
+      const issue = await SpaceIssue.findOneAndUpdate(
         {
-          $set: {
-            active: false,
-            updatedAt: Math.floor(Date.now() / 1000),
-            operatedBy: req.session.userId,
-          },
+          _id: toObjectId(issueId),
+          active: true,
+          organizationId: toObjectId(req.session.organizationId),
         },
+        { $set: update },
         { new: true },
       );
 
-      if (!updated) {
-        return UtilController.sendError(req, res, next, {
-          message: "Record not found",
-          responseCode: returnCode.recordNotFound,
-        });
-      }
+      if (!issue) return sendNotFound(req, res, next, "Issue not found");
+
+      UtilController.sendSuccess(req, res, next, {
+        issue,
+        responseCode: returnCode.validSession,
+      });
+    } catch (err) {
+      UtilController.sendError(req, res, next, err);
+    }
+  },
+
+  deleteMainProject: async (req, res, next) => {
+    try {
+      const recordId = recordIdFrom(req.body, "recordId", "mainProjectId");
+      if (!recordId) return sendValidationError(req, res, next, "recordId is required");
+
+      const ts = nowTs();
+      const updated = await MainProject.findOneAndUpdate(
+        activeProjectMatch(req, recordId),
+        { $set: { active: false, updatedAt: ts, operatedBy: req.session.userId } },
+        { new: true },
+      );
+
+      if (!updated) return sendNotFound(req, res, next);
+
+      await SpaceIssue.updateMany(
+        { mainProjectId: updated._id, active: true },
+        { $set: { active: false, updatedAt: ts } },
+      );
 
       UtilController.sendSuccess(req, res, next, {
         message: "Deleted successfully",
