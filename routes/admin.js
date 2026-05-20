@@ -438,7 +438,7 @@ router.route("/allocation/pr/delete").post(WorkAllocation.deleteDocument);
 router.route("/resource-management").post(ResourceManagementController.getResourceManagement);
 
 //dashboard
-router.route("/dashboard/count/employee").post(DashboardController.getDashboardCountEmployee);
+router.route("/dashboard/count/employee").post(DashboardController.getDashboardCountEmployeeSession);
 
 router.route("/dashboard/list/employee").post(DashboardController.getDashboardEmployee);
 router.route("/dashboard/workallocations").post(DashboardController.workallocations);
