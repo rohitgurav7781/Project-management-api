@@ -24,11 +24,63 @@ const mainProjectSchema = new Schema(
       default: "Team-managed software",
       trim: true,
     },
-    lead: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
+    templateId: {
+      type: String,
+      default: "kanban",
+      trim: true,
+    },
+    boardType: {
+      type: String,
+      default: "kanban",
+      trim: true,
+    },
+    boardColumns: {
+      type: [
+        {
+          id: String,
+          name: String,
+          statusKey: String,
+          order: Number,
+          wipLimit: { type: Number, default: null },
+        },
+      ],
+      default: [],
+    },
+    workTypes: {
+      type: [
+        {
+          key: String,
+          label: String,
+          color: String,
+          icon: String,
+        },
+      ],
+      default: [],
+    },
+    workflowStatuses: {
+      type: [
+        {
+          label: String,
+          statusKey: String,
+          bgcolor: String,
+          color: String,
+        },
+      ],
+      default: [],
+    },
+    lead: { type: Schema.Types.ObjectId, ref: "User" },
+    teamLead: { type: Schema.Types.ObjectId, ref: "User" },
+    accessScope: {
+      type: String,
+      enum: ["company", "team"],
+      default: "team",
+      trim: true,
     },
     isStarred: {
+      type: Boolean,
+      default: false,
+    },
+    isArchived: {
       type: Boolean,
       default: false,
     },
