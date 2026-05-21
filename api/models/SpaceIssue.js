@@ -23,6 +23,16 @@ const spaceIssueSchema = new Schema(
       required: true,
       trim: true,
     },
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    parentIssueId: {
+      type: Schema.Types.ObjectId,
+      ref: "SpaceIssue",
+      default: null,
+    },
     issueType: {
       type: String,
       default: "task",
@@ -66,6 +76,10 @@ const spaceIssueSchema = new Schema(
 );
 
 spaceIssueSchema.index({ mainProjectId: 1, active: 1, statusKey: 1, sortOrder: 1 });
-spaceIssueSchema.index({ organizationId: 1, issueKey: 1 }, { unique: true, partialFilterExpression: { active: true } });
+spaceIssueSchema.index({ parentIssueId: 1, active: 1 });
+spaceIssueSchema.index(
+  { mainProjectId: 1, issueKey: 1 },
+  { unique: true, partialFilterExpression: { active: true } },
+);
 
 module.exports = mongoose.model("SpaceIssue", spaceIssueSchema);

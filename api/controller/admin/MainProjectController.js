@@ -17,13 +17,17 @@ const {
   sendNotFound,
   requireOrganization,
   touchMeta,
+  nextSpaceIssueKey,
   returnCode,
 } = require("./mainProjectHelpers");
 
 const handleDuplicateKey = (req, res, next, err) => {
   if (err?.code === 11000) {
+    const isIssueKey = err?.keyPattern?.issueKey != null;
     return UtilController.sendError(req, res, next, {
-      message: "Duplicate project key for this organization",
+      message: isIssueKey
+        ? "Could not create task. Please try again."
+        : "Duplicate project key for this organization",
       responseCode: returnCode.duplicate,
     });
   }
@@ -117,10 +121,11 @@ module.exports = {
         updatedAt: nowTs(),
       }).save();
 
+      const welcomeIssueKey = await nextSpaceIssueKey(saved._id, projectKey);
       const welcomeIssue = await new SpaceIssue({
         organizationId: req.session.organizationId,
         mainProjectId: saved._id,
-        issueKey: `${projectKey}-1`,
+        issueKey: welcomeIssueKey,
         title: `Welcome to ${name}`,
         issueType: templateConfig.boardType === "scrum" ? "story" : "task",
         statusKey: templateConfig.boardColumns[0]?.statusKey || "TODO",
@@ -215,6 +220,8 @@ module.exports = {
       const issueType = (req.body.issueType || "task").trim();
       const statusKey = normalizeStatusKey(req.body.statusKey);
       const assigneeId = req.body.assigneeId || req.body.assignee;
+      const parentIssueId = req.body.parentIssueId;
+      const description = req.body.description != null ? String(req.body.description).trim() : "";
 
       if (!mainProjectId || !title) {
         return sendValidationError(req, res, next, "mainProjectId and title are required");
@@ -223,21 +230,66 @@ module.exports = {
       const project = await MainProject.findOne(projectMatchById(req, mainProjectId)).lean();
       if (!project) return sendNotFound(req, res, next, "Space not found");
 
-      const count = await SpaceIssue.countDocuments({ mainProjectId: project._id, active: true });
+      let parentIssue = null;
+      if (parentIssueId) {
+        parentIssue = await SpaceIssue.findOne({
+          _id: toObjectId(parentIssueId),
+          mainProjectId: project._id,
+          active: true,
+          organizationId: toObjectId(req.session.organizationId),
+        }).lean();
+        if (!parentIssue) return sendNotFound(req, res, next, "Parent issue not found");
+      }
+
+      const sortOrder = await SpaceIssue.countDocuments({ mainProjectId: project._id, active: true });
+      const issueKey = await nextSpaceIssueKey(project._id, project.projectKey);
       const issue = await new SpaceIssue({
         organizationId: req.session.organizationId,
         mainProjectId: project._id,
-        issueKey: `${project.projectKey}-${count + 1}`,
+        issueKey,
         title,
+        description,
+        parentIssueId: parentIssue ? parentIssue._id : undefined,
         issueType,
         statusKey,
         assignee: assigneeId ? toObjectId(assigneeId) : undefined,
-        sortOrder: count,
+        sortOrder,
         createdBy: req.session.userId,
       }).save();
 
       UtilController.sendSuccess(req, res, next, {
         issue,
+        responseCode: returnCode.validSession,
+      });
+    } catch (err) {
+      UtilController.sendError(req, res, next, err);
+    }
+  },
+
+  getSpaceIssueDetails: async (req, res, next) => {
+    try {
+      const issueId = recordIdFrom(req.body, "issueId", "recordId");
+      if (!issueId) return sendValidationError(req, res, next, "issueId is required");
+
+      const issue = await SpaceIssue.findOne({
+        _id: toObjectId(issueId),
+        active: true,
+        organizationId: toObjectId(req.session.organizationId),
+      }).lean();
+
+      if (!issue) return sendNotFound(req, res, next, "Issue not found");
+
+      const subtasks = await SpaceIssue.find({
+        parentIssueId: issue._id,
+        active: true,
+        isArchived: { $ne: true },
+      })
+        .sort({ sortOrder: 1, createdAt: 1 })
+        .lean();
+
+      UtilController.sendSuccess(req, res, next, {
+        issue,
+        subtasks,
         responseCode: returnCode.validSession,
       });
     } catch (err) {
@@ -252,6 +304,7 @@ module.exports = {
 
       const update = { updatedAt: nowTs() };
       if (req.body.title !== undefined) update.title = String(req.body.title).trim();
+      if (req.body.description !== undefined) update.description = String(req.body.description).trim();
       if (req.body.statusKey !== undefined) update.statusKey = normalizeStatusKey(req.body.statusKey);
       if (req.body.issueType !== undefined) update.issueType = String(req.body.issueType).trim();
       if (req.body.sortOrder !== undefined) update.sortOrder = Number(req.body.sortOrder);

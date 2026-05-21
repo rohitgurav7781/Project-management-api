@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const SpaceIssue = require("../../models/SpaceIssue");
 const UtilController = require("../services/UtilController");
 const returnCode = require("../../../config/responseCode").returnCode;
 
@@ -119,6 +120,21 @@ const touchMeta = (req) => ({
   operatedBy: req.session.userId,
 });
 
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Next issue key for a space (e.g. PR-4), including inactive rows so numbers never collide. */
+const nextSpaceIssueKey = async (mainProjectId, projectKey) => {
+  const prefix = `${normalizeProjectKey(projectKey)}-`;
+  const rows = await SpaceIssue.find({ mainProjectId: toObjectId(mainProjectId) }).select("issueKey").lean();
+  let max = 0;
+  const re = new RegExp(`^${escapeRegex(prefix)}(\\d+)$`, "i");
+  for (const row of rows) {
+    const match = String(row.issueKey || "").match(re);
+    if (match) max = Math.max(max, parseInt(match[1], 10));
+  }
+  return `${prefix}${max + 1}`;
+};
+
 module.exports = {
   nowTs,
   toObjectId,
@@ -135,5 +151,6 @@ module.exports = {
   sendNotFound,
   requireOrganization,
   touchMeta,
+  nextSpaceIssueKey,
   returnCode,
 };

@@ -306,6 +306,7 @@ router.route("/mainProject/list").post(MainProjectController.listMainProjects);
 router.route("/mainProject/create").post(MainProjectController.createMainProject);
 router.route("/mainProject/details").post(MainProjectController.getMainProjectDetails);
 router.route("/mainProject/issue/create").post(MainProjectController.createSpaceIssue);
+router.route("/mainProject/issue/details").post(MainProjectController.getSpaceIssueDetails);
 router.route("/mainProject/issue/update").post(MainProjectController.updateSpaceIssue);
 router.route("/mainProject/update").post(MainProjectController.updateMainProject);
 router.route("/mainProject/delete").post(MainProjectController.deleteMainProject);
