@@ -18,6 +18,7 @@ const {
   requireOrganization,
   touchMeta,
   nextSpaceIssueKey,
+  parseOptionalDate,
   returnCode,
 } = require("./mainProjectHelpers");
 
@@ -167,6 +168,30 @@ module.exports = {
         update.accessScope = s === "company" ? "company" : "team";
       }
 
+      if (Array.isArray(req.body.boardColumns)) {
+        update.boardColumns = req.body.boardColumns
+          .map((col, index) => ({
+            id: String(col.id || `col_${index}`).trim(),
+            name: String(col.name || "").trim(),
+            statusKey: normalizeStatusKey(col.statusKey || col.name),
+            order: Number.isFinite(Number(col.order)) ? Number(col.order) : index,
+            wipLimit: col.wipLimit != null && col.wipLimit !== "" ? Number(col.wipLimit) : null,
+          }))
+          .filter((col) => col.name);
+        if (!update.boardColumns.length) {
+          return sendValidationError(req, res, next, "At least one board column is required");
+        }
+      }
+
+      if (Array.isArray(req.body.workflowStatuses)) {
+        update.workflowStatuses = req.body.workflowStatuses.map((ws) => ({
+          label: String(ws.label || ws.statusKey || "").trim(),
+          statusKey: normalizeStatusKey(ws.statusKey),
+          bgcolor: String(ws.bgcolor || "#DFE1E6").trim(),
+          color: String(ws.color || "#44546F").trim(),
+        }));
+      }
+
       const updated = await MainProject.findOneAndUpdate(
         activeProjectMatch(req, recordId),
         { $set: update },
@@ -243,6 +268,10 @@ module.exports = {
 
       const sortOrder = await SpaceIssue.countDocuments({ mainProjectId: project._id, active: true });
       const issueKey = await nextSpaceIssueKey(project._id, project.projectKey);
+      const dueDate = parseOptionalDate(req.body.dueDate);
+      const startDate = parseOptionalDate(req.body.startDate);
+      const priority = (req.body.priority || "medium").trim().toLowerCase();
+
       const issue = await new SpaceIssue({
         organizationId: req.session.organizationId,
         mainProjectId: project._id,
@@ -253,6 +282,9 @@ module.exports = {
         issueType,
         statusKey,
         assignee: assigneeId ? toObjectId(assigneeId) : undefined,
+        dueDate: dueDate ?? undefined,
+        startDate: startDate ?? undefined,
+        priority: priority || "medium",
         sortOrder,
         createdBy: req.session.userId,
       }).save();
@@ -314,6 +346,11 @@ module.exports = {
       }
       if (req.body.isArchived !== undefined) update.isArchived = !!req.body.isArchived;
       if (req.body.active !== undefined) update.active = !!req.body.active;
+      if (req.body.dueDate !== undefined) update.dueDate = parseOptionalDate(req.body.dueDate);
+      if (req.body.startDate !== undefined) update.startDate = parseOptionalDate(req.body.startDate);
+      if (req.body.priority !== undefined) {
+        update.priority = String(req.body.priority || "medium").trim().toLowerCase();
+      }
 
       const issue = await SpaceIssue.findOneAndUpdate(
         {

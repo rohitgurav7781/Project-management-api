@@ -51,6 +51,19 @@ const spaceIssueSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
     },
+    dueDate: {
+      type: Number,
+      default: null,
+    },
+    startDate: {
+      type: Number,
+      default: null,
+    },
+    priority: {
+      type: String,
+      default: "medium",
+      trim: true,
+    },
     isArchived: {
       type: Boolean,
       default: false,

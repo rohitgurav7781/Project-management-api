@@ -135,6 +135,18 @@ const nextSpaceIssueKey = async (mainProjectId, projectKey) => {
   return `${prefix}${max + 1}`;
 };
 
+/** Parse YYYY-MM-DD or unix seconds to start-of-day unix timestamp (seconds). */
+const parseOptionalDate = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return parseInt(raw, 10);
+  const d = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.floor(d.getTime() / 1000);
+};
+
 module.exports = {
   nowTs,
   toObjectId,
@@ -152,5 +164,6 @@ module.exports = {
   requireOrganization,
   touchMeta,
   nextSpaceIssueKey,
+  parseOptionalDate,
   returnCode,
 };
